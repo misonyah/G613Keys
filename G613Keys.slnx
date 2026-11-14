@@ -1,0 +1,9 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/G613Keys.Core/G613Keys.Core.csproj" />
+    <Project Path="src/G613Keys/G613Keys.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/G613Keys.Tests/G613Keys.Tests.csproj" />
+  </Folder>
+</Solution>

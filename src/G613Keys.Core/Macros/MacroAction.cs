@@ -23,6 +23,7 @@ public enum MouseButton { Left, Right, Middle }
 [JsonDerivedType(typeof(Delay), "delay")]
 [JsonDerivedType(typeof(MouseAction), "mouse")]
 [JsonDerivedType(typeof(Repeat), "repeat")]
+[JsonDerivedType(typeof(LaunchApp), "run")]
 public abstract record MacroAction;
 
 /// <summary>Press a virtual-key with optional modifiers (held for the stroke).</summary>
@@ -39,3 +40,6 @@ public sealed record MouseAction(MouseButton Button, int? X = null, int? Y = nul
 
 /// <summary>Repeat a body of actions a fixed number of times.</summary>
 public sealed record Repeat(IReadOnlyList<MacroAction> Body, int Count) : MacroAction;
+
+/// <summary>Launch an executable (optionally with arguments), like G HUB's "launch application".</summary>
+public sealed record LaunchApp(string Path, string Arguments = "") : MacroAction;

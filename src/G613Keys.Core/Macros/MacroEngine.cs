@@ -1,11 +1,13 @@
+using System.Diagnostics;
 using G613Keys.Core.Native;
 using static G613Keys.Core.Native.Win32Input;
 
 namespace G613Keys.Core.Macros;
 
 /// <summary>
-/// Executes a macro action sequence via SendInput. The send and delay functions
-/// are injectable so execution is fully unit-testable without real input.
+/// Executes a macro action sequence via SendInput. The send, delay and launch
+/// functions are injectable so execution is fully unit-testable without real
+/// input or spawning processes.
 /// </summary>
 public sealed class MacroEngine
 {
@@ -14,11 +16,30 @@ public sealed class MacroEngine
 
     private readonly Func<INPUT[], uint> _send;
     private readonly Func<int, CancellationToken, Task> _delay;
+    private readonly Action<LaunchApp> _launch;
 
-    public MacroEngine(Func<INPUT[], uint>? send = null, Func<int, CancellationToken, Task>? delay = null)
+    public MacroEngine(
+        Func<INPUT[], uint>? send = null,
+        Func<int, CancellationToken, Task>? delay = null,
+        Action<LaunchApp>? launch = null)
     {
         _send = send ?? (inputs => SendInput((uint)inputs.Length, inputs, InputSize));
         _delay = delay ?? ((ms, ct) => Task.Delay(ms, ct));
+        _launch = launch ?? DefaultLaunch;
+    }
+
+    private static void DefaultLaunch(LaunchApp la)
+    {
+        try
+        {
+            Process.Start(new ProcessStartInfo
+            {
+                FileName = la.Path,
+                Arguments = la.Arguments,
+                UseShellExecute = true,
+            });
+        }
+        catch { /* a bad path in the user's config shouldn't crash the macro thread */ }
     }
 
     public async Task Run(IReadOnlyList<MacroAction> actions, CancellationToken ct = default)
@@ -47,9 +68,14 @@ public sealed class MacroEngine
                         await Run(r.Body, ct).ConfigureAwait(false);
                     }
                     break;
+                case LaunchApp la:
+                    Launch(la);
+                    break;
             }
         }
     }
+
+    private void Launch(LaunchApp la) => _launch(la);
 
     private void Emit(INPUT[] inputs)
     {

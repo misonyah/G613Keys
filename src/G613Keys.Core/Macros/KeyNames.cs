@@ -37,6 +37,9 @@ public static class KeyNames
             ["numlock"] = 0x90, ["scrolllock"] = 0x91, ["apps"] = 0x5D, ["menu"] = 0x5D,
             ["volumeup"] = 0xAF, ["volumedown"] = 0xAE, ["volumemute"] = 0xAD,
             ["medianext"] = 0xB0, ["mediaprev"] = 0xB1, ["mediastop"] = 0xB2, ["mediaplay"] = 0xB3,
+            ["`"] = 0xC0, ["grave"] = 0xC0, ["backtick"] = 0xC0,
+            ["-"] = 0xBD, ["="] = 0xBB, ["["] = 0xDB, ["]"] = 0xDD, ["\\"] = 0xDC,
+            [";"] = 0xBA, ["'"] = 0xDE, [","] = 0xBC, ["."] = 0xBE, ["/"] = 0xBF,
         };
         for (ushort f = 1; f <= 24; f++)
             d[$"f{f}"] = (ushort)(0x70 + f - 1);
@@ -56,6 +59,8 @@ public static class KeyNames
             [0x90] = "NumLock", [0x91] = "ScrollLock", [0x5D] = "Apps",
             [0xAF] = "VolumeUp", [0xAE] = "VolumeDown", [0xAD] = "VolumeMute",
             [0xB0] = "MediaNext", [0xB1] = "MediaPrev", [0xB2] = "MediaStop", [0xB3] = "MediaPlay",
+            [0xC0] = "`", [0xBD] = "-", [0xBB] = "=", [0xDB] = "[", [0xDD] = "]", [0xDC] = "\\",
+            [0xBA] = ";", [0xDE] = "'", [0xBC] = ",", [0xBE] = ".", [0xBF] = "/",
         };
         for (ushort f = 1; f <= 24; f++)
             d[(ushort)(0x70 + f - 1)] = $"F{f}";

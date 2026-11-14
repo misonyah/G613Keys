@@ -77,6 +77,38 @@ public class MacroEngineTests
     }
 
     [Fact]
+    public async Task LaunchApp_InvokesInjectedLauncher()
+    {
+        var launched = new List<LaunchApp>();
+        var engine = new MacroEngine(launch: launched.Add);
+
+        await engine.Run([new LaunchApp(@"C:\x\app.exe", "-backlight 100")]);
+
+        var la = Assert.Single(launched);
+        Assert.Equal(@"C:\x\app.exe", la.Path);
+        Assert.Equal("-backlight 100", la.Arguments);
+    }
+
+    [Fact]
+    public async Task ModifierOnlyChord_PressesBothHeldTogether()
+    {
+        var rec = new Recorder();
+        var engine = new MacroEngine(rec.Send, rec.Delay);
+
+        // "Alt+Shift" -> Alt as modifier, Shift as the key.
+        await engine.Run(G613Keys.Core.Macros.MacroScript.Parse("key: Alt+Shift").ToList());
+
+        var seq = rec.Inputs.Select(Decode).ToArray();
+        Assert.Equal(new (ushort, bool, bool)[]
+        {
+            (0x12, false, false), // Alt down
+            (0x10, false, false), // Shift down
+            (0x10, true,  false), // Shift up
+            (0x12, true,  false), // Alt up
+        }, seq);
+    }
+
+    [Fact]
     public async Task Run_Cancelled_Throws()
     {
         var rec = new Recorder();

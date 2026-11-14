@@ -46,6 +46,30 @@ public class MacroScriptTests
     }
 
     [Fact]
+    public void Parse_Run_WithArgs()
+    {
+        var la = Assert.IsType<LaunchApp>(Assert.Single(
+            MacroScript.Parse(@"run: C:\Program Files\App\x.exe ::: -backlight 100")));
+        Assert.Equal(@"C:\Program Files\App\x.exe", la.Path);
+        Assert.Equal("-backlight 100", la.Arguments);
+    }
+
+    [Fact]
+    public void Parse_ModifierOnlyChord()
+    {
+        var k = Assert.IsType<KeyStroke>(Assert.Single(MacroScript.Parse("key: Alt+Shift")));
+        Assert.Equal((ushort)0x10, k.Vk);          // Shift as the key
+        Assert.Equal(Modifiers.Alt, k.Mods);        // Alt as the modifier
+    }
+
+    [Fact]
+    public void Format_RoundTrips_RunAndChord()
+    {
+        var text = "key: Alt+Shift\nrun: C:\\a\\b.exe ::: -x 1\nkey: Alt+`";
+        Assert.Equal(text, MacroScript.Format(MacroScript.Parse(text)));
+    }
+
+    [Fact]
     public void Parse_IgnoresBlankAndUnknownLines()
     {
         var actions = MacroScript.Parse("\n  \nbogus line\nkey: A\n");

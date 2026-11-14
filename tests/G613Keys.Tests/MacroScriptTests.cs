@@ -76,4 +76,60 @@ public class MacroScriptTests
         var only = Assert.Single(actions);
         Assert.Equal((ushort)'A', Assert.IsType<KeyStroke>(only).Vk);
     }
+
+    [Fact]
+    public void Validate_CleanScript_HasNoErrors()
+    {
+        var errors = MacroScript.Validate("key: Ctrl+C\ntext: hi\ndelay: 50\nmouse: left\nrepeat 2 { key: Up }\nrun: a.exe");
+        Assert.Empty(errors);
+    }
+
+    [Fact]
+    public void Validate_BlankLines_AreSkipped()
+    {
+        Assert.Empty(MacroScript.Validate("\n   \n\tkey: A\n\n"));
+    }
+
+    [Fact]
+    public void Validate_ReportsLineNumberAndReason()
+    {
+        // line 1 ok, line 2 unknown kind, line 3 bad delay, line 4 unknown key name
+        var errors = MacroScript.Validate("key: A\nwat: x\ndelay: fast\nkey: Ctrl+Nope");
+        Assert.Equal(3, errors.Count);
+        Assert.Equal(2, errors[0].Line);
+        Assert.Equal(3, errors[1].Line);
+        Assert.Equal(4, errors[2].Line);
+        Assert.Contains("delay", errors[1].Message, System.StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void Validate_NoColon_IsAnError()
+    {
+        var e = Assert.Single(MacroScript.Validate("just some words"));
+        Assert.Equal(1, e.Line);
+    }
+
+    [Fact]
+    public void Validate_MalformedRepeat_IsAnError()
+    {
+        Assert.NotEmpty(MacroScript.Validate("repeat 3 key: Up"));   // missing braces
+        Assert.NotEmpty(MacroScript.Validate("repeat x { key: Up }")); // bad count
+    }
+
+    [Fact]
+    public void FormatKeyChord_BuildsKeyLine()
+    {
+        Assert.Equal("key: Ctrl+Shift+S",
+            MacroScript.FormatKeyChord((ushort)'S', Modifiers.Ctrl | Modifiers.Shift));
+        Assert.Equal("key: F5", MacroScript.FormatKeyChord(0x74, Modifiers.None));
+    }
+
+    [Fact]
+    public void FormatKeyChord_RoundTripsThroughParse()
+    {
+        var line = MacroScript.FormatKeyChord(0x0D, Modifiers.Alt); // Alt+Enter
+        var k = Assert.IsType<KeyStroke>(Assert.Single(MacroScript.Parse(line)));
+        Assert.Equal((ushort)0x0D, k.Vk);
+        Assert.Equal(Modifiers.Alt, k.Mods);
+    }
 }

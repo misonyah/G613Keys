@@ -28,6 +28,92 @@ public static class MacroScript
         return actions;
     }
 
+    /// <summary>A problem with one line of a macro script, for inline UI feedback.</summary>
+    public readonly record struct ScriptError(int Line, string Message);
+
+    /// <summary>
+    /// Check a script line by line without executing it. Returns one
+    /// <see cref="ScriptError"/> per non-blank line that wouldn't parse, with a
+    /// 1-based line number and a short reason. An empty list means the script is valid.
+    /// </summary>
+    public static IReadOnlyList<ScriptError> Validate(string text)
+    {
+        var errors = new List<ScriptError>();
+        if (string.IsNullOrWhiteSpace(text)) return errors;
+        var lines = text.Replace("\r\n", "\n").Split('\n');
+        for (int i = 0; i < lines.Length; i++)
+        {
+            var line = lines[i].Trim();
+            if (line.Length == 0) continue;
+            var reason = LineError(line);
+            if (reason is not null) errors.Add(new ScriptError(i + 1, reason));
+        }
+        return errors;
+    }
+
+    /// <summary>Returns a human-readable reason the line is invalid, or null if it parses.</summary>
+    private static string? LineError(string line)
+    {
+        if (line.StartsWith("repeat ", StringComparison.OrdinalIgnoreCase))
+        {
+            int brace = line.IndexOf('{');
+            int end = line.LastIndexOf('}');
+            if (brace < 0 || end < brace) return "repeat needs braces: repeat N { … }";
+            if (!int.TryParse(line[7..brace].Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out _))
+                return "repeat count must be a number";
+            return ParseRepeat(line) is null ? "repeat body has no valid actions" : null;
+        }
+
+        int colon = line.IndexOf(':');
+        if (colon < 0) return "expected 'kind: value' (e.g. key: Ctrl+S)";
+        string kind = line[..colon].Trim().ToLowerInvariant();
+        string arg = line[(colon + 1)..].Trim();
+        return kind switch
+        {
+            "key" => KeyChordError(arg),
+            "text" => null,
+            "delay" => int.TryParse(arg, NumberStyles.Integer, CultureInfo.InvariantCulture, out _) ? null : "delay must be milliseconds (a number)",
+            "mouse" => ParseMouse(arg) is null ? "mouse must be left, right or middle" : null,
+            "run" => ParseRun(arg) is null ? "run needs a path" : null,
+            _ => $"unknown action '{kind}' (use key, text, delay, mouse, run or repeat)",
+        };
+    }
+
+    /// <summary>
+    /// Validate a <c>key:</c> argument, flagging any token that is neither a known
+    /// modifier nor a known key name. Unlike <see cref="ParseKey"/> (which tolerates a
+    /// bare modifier chord like "Alt+Shift"), this rejects a typo'd key name such as
+    /// "Ctrl+Nope" instead of silently degrading it to a lone modifier press.
+    /// </summary>
+    private static string? KeyChordError(string spec)
+    {
+        var parts = spec.Split('+', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        if (parts.Length == 0) return "key needs at least one key, e.g. key: Ctrl+S";
+        bool anyModifier = false;
+        int realKeys = 0;
+        foreach (var p in parts)
+        {
+            switch (p.ToLowerInvariant())
+            {
+                case "ctrl" or "control" or "shift" or "alt" or "win" or "cmd" or "meta":
+                    anyModifier = true;
+                    break;
+                default:
+                    if (KeyNames.ToVk(p) is null) return $"unknown key: '{p}'";
+                    realKeys++;
+                    break;
+            }
+        }
+        return realKeys == 0 && !anyModifier ? "key needs at least one key" : null;
+    }
+
+    /// <summary>
+    /// Build a <c>key:</c> script line from a captured modifier+key chord, for the
+    /// config UI's record-a-keypress feature. Round-trips through <see cref="Parse"/>.
+    /// </summary>
+    public static string FormatKeyChord(ushort vk, Modifiers mods)
+        => FormatLine(new KeyStroke(vk, mods));
+
     private static MacroAction? ParseLine(string line)
     {
         if (line.StartsWith("repeat ", StringComparison.OrdinalIgnoreCase))

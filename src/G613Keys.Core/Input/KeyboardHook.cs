@@ -34,6 +34,12 @@ public sealed class KeyboardHook : IDisposable
     /// <summary>Return true to swallow the key event with virtual-key <c>vk</c>.</summary>
     public Func<int, bool> ShouldSwallow { get; set; } = _ => false;
 
+    /// <summary>
+    /// Observes every key event as (virtualKey, isDown) before the swallow decision,
+    /// for features like record-a-keypress. Does not affect propagation.
+    /// </summary>
+    public Action<int, bool>? KeyEvent { get; set; }
+
     public KeyboardHook() => _proc = HookCallback;
 
     public bool Install()
@@ -51,6 +57,8 @@ public sealed class KeyboardHook : IDisposable
             if (msg is WM_KEYDOWN or WM_SYSKEYDOWN or WM_KEYUP or WM_SYSKEYUP)
             {
                 var k = Marshal.PtrToStructure<KBDLLHOOKSTRUCT>(lParam);
+                bool isDown = msg is WM_KEYDOWN or WM_SYSKEYDOWN;
+                KeyEvent?.Invoke((int)k.vkCode, isDown);
                 if (ShouldSwallow((int)k.vkCode))
                     return 1; // non-zero prevents the event from propagating
             }

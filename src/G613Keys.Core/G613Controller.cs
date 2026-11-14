@@ -101,16 +101,21 @@ public sealed class G613Controller : IDisposable
         if (Status == ControllerStatus.Running) SetStatus(ControllerStatus.Stopped);
     }
 
-    /// <summary>Re-send divert after the keyboard woke or the receiver reconnected.</summary>
+    /// <summary>
+    /// Called on device arrival and by the periodic health retry. If the pipeline
+    /// is up, re-send divert; otherwise rebuild it — the keyboard may have just
+    /// woken or been plugged in. A sleep→wake often fires no device event and the
+    /// keyboard reports no feature while asleep, so retrying from any non-running
+    /// state is what makes the app recover after idle.
+    /// </summary>
     public void ReArm()
     {
-        if (_gkeys is null || Status != ControllerStatus.Running)
+        if (Status == ControllerStatus.Running && _gkeys is not null)
         {
-            // Device may have just arrived — try a fresh start.
-            if (Status is ControllerStatus.NoDevice or ControllerStatus.NoReceiver) Start();
+            try { _gkeys.ReArm(); } catch { Start(); }
             return;
         }
-        try { _gkeys.ReArm(); } catch { /* arrival may be mid-flux; next event retries */ }
+        if (Status != ControllerStatus.Stopped) Start();
     }
 
     private void OnKeyChanged(GKeyEvent ev)

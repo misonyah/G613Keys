@@ -14,6 +14,7 @@ internal sealed class TrayApp : ApplicationContext
     private readonly G613Controller _controller;
     private readonly DeviceNotificationWindow _devWindow;
     private readonly System.Windows.Forms.Timer _reArmDebounce;
+    private readonly System.Windows.Forms.Timer _healthRetry;
     private readonly SynchronizationContext _ui;
     private readonly ToolStripMenuItem _enableItem;
     private readonly ToolStripMenuItem _statusItem;
@@ -55,6 +56,16 @@ internal sealed class TrayApp : ApplicationContext
         _reArmDebounce = new System.Windows.Forms.Timer { Interval = 400 };
         _reArmDebounce.Tick += (_, _) => { _reArmDebounce.Stop(); _controller.ReArm(); };
         _devWindow.DeviceArrived += () => _ui.Post(_ => RestartDebounce(), null);
+
+        // The keyboard sleeps aggressively and a sleep→wake fires no device event,
+        // so poll: while enabled but not running, retry building the pipeline.
+        _healthRetry = new System.Windows.Forms.Timer { Interval = 4000 };
+        _healthRetry.Tick += (_, _) =>
+        {
+            if (_enableItem.Checked && _controller.Status != ControllerStatus.Running)
+                _controller.Start();
+        };
+        _healthRetry.Start();
 
         _controller.Start();
     }
@@ -151,6 +162,7 @@ internal sealed class TrayApp : ApplicationContext
         if (disposing)
         {
             _reArmDebounce.Dispose();
+            _healthRetry.Dispose();
             _devWindow.Dispose();
             _controller.Dispose();
             _tray.Dispose();

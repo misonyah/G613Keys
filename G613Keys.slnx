@@ -6,4 +6,7 @@
   <Folder Name="/tests/">
     <Project Path="tests/G613Keys.Tests/G613Keys.Tests.csproj" />
   </Folder>
+  <Folder Name="/tools/">
+    <Project Path="tools/G613Keys.Diag/G613Keys.Diag.csproj" />
+  </Folder>
 </Solution>

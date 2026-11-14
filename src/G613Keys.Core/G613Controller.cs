@@ -1,0 +1,143 @@
+using G613Keys.Core.GKeys;
+using G613Keys.Core.Hidpp;
+using G613Keys.Core.Input;
+using G613Keys.Core.Macros;
+using G613Keys.Core.Profiles;
+
+namespace G613Keys.Core;
+
+public enum ControllerStatus
+{
+    Stopped,
+    Running,
+    NoReceiver,   // LIGHTSPEED receiver not found
+    NoDevice,     // receiver present but the G613 didn't answer (off / on Bluetooth)
+    NoGKeys,      // device present but doesn't expose GKeys (0x8010)
+    Error,
+}
+
+/// <summary>
+/// Owns the live HID++ pipeline: transport → device → GKeys divert → macro
+/// execution via the active per-app profile. Thin enough that the tray app only
+/// starts/stops it and shows <see cref="Status"/>.
+/// </summary>
+public sealed class G613Controller : IDisposable
+{
+    private readonly ProfileStore _store;
+    private readonly ForegroundWatcher _foreground;
+    private readonly MacroEngine _engine;
+    private readonly KeyboardHook _hook;
+
+    private HidppTransport? _transport;
+    private GKeyService? _gkeys;
+    private IReadOnlyList<Profile> _profiles;
+    private CancellationTokenSource? _runningMacro;
+
+    public ControllerStatus Status { get; private set; } = ControllerStatus.Stopped;
+    public string? LastError { get; private set; }
+
+    /// <summary>Raised whenever <see cref="Status"/> changes, for the tray UI.</summary>
+    public event Action<ControllerStatus>? StatusChanged;
+
+    /// <summary>
+    /// Virtual-key codes to swallow when <see cref="SuppressDefaultOutput"/> is on
+    /// (the double-input fallback). Populated once hardware confirms whether divert
+    /// silences the default output and, if not, what the keys emit.
+    /// </summary>
+    public HashSet<int> DefaultOutputVks { get; } = new();
+
+    public bool SuppressDefaultOutput { get; set; }
+
+    public G613Controller(ProfileStore? store = null)
+    {
+        _store = store ?? new ProfileStore();
+        _profiles = _store.Load();
+        _store.Changed += () => _profiles = _store.Load();
+        _store.StartWatching();
+        _foreground = new ForegroundWatcher();
+        _engine = new MacroEngine();
+        _hook = new KeyboardHook { ShouldSwallow = vk => SuppressDefaultOutput && DefaultOutputVks.Contains(vk) };
+    }
+
+    /// <summary>Build and start the pipeline. Safe to call again to retry.</summary>
+    public void Start()
+    {
+        Stop();
+        try
+        {
+            var channels = WindowsHidChannel.OpenAll();
+            if (channels.Count == 0) { SetStatus(ControllerStatus.NoReceiver); return; }
+
+            _transport = new HidppTransport(channels);
+            _transport.Start();
+
+            var slot = HidppDevice.FindDeviceIndex(_transport);
+            if (slot is null) { SetStatus(ControllerStatus.NoDevice); return; }
+
+            var device = new HidppDevice(_transport, slot.Value);
+            byte feat = device.GetFeatureIndex(HidppDevice.GKeysFeatureId);
+            if (feat == 0) { SetStatus(ControllerStatus.NoGKeys); return; }
+
+            _gkeys = new GKeyService(_transport, device, feat);
+            _gkeys.KeyChanged += OnKeyChanged;
+            _gkeys.Enable();
+
+            _hook.Install();
+            SetStatus(ControllerStatus.Running);
+        }
+        catch (Exception ex)
+        {
+            LastError = ex.Message;
+            SetStatus(ControllerStatus.Error);
+        }
+    }
+
+    public void Stop()
+    {
+        _runningMacro?.Cancel();
+        if (_gkeys is not null) { _gkeys.KeyChanged -= OnKeyChanged; _gkeys.Dispose(); _gkeys = null; }
+        _transport?.Dispose();
+        _transport = null;
+        if (Status == ControllerStatus.Running) SetStatus(ControllerStatus.Stopped);
+    }
+
+    /// <summary>Re-send divert after the keyboard woke or the receiver reconnected.</summary>
+    public void ReArm()
+    {
+        if (_gkeys is null || Status != ControllerStatus.Running)
+        {
+            // Device may have just arrived — try a fresh start.
+            if (Status is ControllerStatus.NoDevice or ControllerStatus.NoReceiver) Start();
+            return;
+        }
+        try { _gkeys.ReArm(); } catch { /* arrival may be mid-flux; next event retries */ }
+    }
+
+    private void OnKeyChanged(GKeyEvent ev)
+    {
+        if (!ev.Down) return; // macros fire on press
+        var profile = ProfileStore.Resolve(_profiles, _foreground.Current);
+        if (!profile.Keys.TryGetValue(ev.Key, out var actions) || actions.Count == 0)
+            return;
+
+        _runningMacro?.Cancel();
+        _runningMacro = new CancellationTokenSource();
+        var ct = _runningMacro.Token;
+        _ = Task.Run(() => _engine.Run(actions, ct), ct);
+    }
+
+    private void SetStatus(ControllerStatus s)
+    {
+        if (Status == s) return;
+        Status = s;
+        StatusChanged?.Invoke(s);
+    }
+
+    public void Dispose()
+    {
+        Stop();
+        _hook.Dispose();
+        _foreground.Dispose();
+        _store.Dispose();
+    }
+}

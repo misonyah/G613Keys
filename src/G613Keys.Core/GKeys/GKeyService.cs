@@ -66,6 +66,15 @@ public sealed class GKeyService : IDisposable
         return SendDivert(true);
     }
 
+    /// <summary>
+    /// Periodic keep-alive: re-assert divert without touching the last-seen key
+    /// state. The G613 silently clears divert when it idle-sleeps and re-wakes,
+    /// reverting to default output; re-sending the enable (which the awake keyboard
+    /// accepts) restores G-key events. Unlike <see cref="ReArm"/> this does not
+    /// reset the bitmap, so a key held across a refresh is not re-fired as a press.
+    /// </summary>
+    public bool RefreshDivert() => _enabled && SendDivert(true);
+
     private bool SendDivert(bool on)
     {
         var req = HidppReport.Request(HidppReportKind.Long, _device.DeviceIndex, _featureIndex,

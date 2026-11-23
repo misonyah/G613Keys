@@ -28,6 +28,7 @@ public sealed class G613Controller : IDisposable
     private readonly MacroEngine _engine;
     private readonly KeyboardHook _hook;
 
+    private readonly object _gate = new();
     private HidppTransport? _transport;
     private GKeyService? _gkeys;
     private IReadOnlyList<Profile> _profiles;
@@ -62,6 +63,8 @@ public sealed class G613Controller : IDisposable
     /// <summary>Build and start the pipeline. Safe to call again to retry.</summary>
     public void Start()
     {
+      lock (_gate)
+      {
         Stop();
         try
         {
@@ -90,15 +93,37 @@ public sealed class G613Controller : IDisposable
             LastError = ex.Message;
             SetStatus(ControllerStatus.Error);
         }
+      }
     }
 
     public void Stop()
     {
+      lock (_gate)
+      {
         _runningMacro?.Cancel();
         if (_gkeys is not null) { _gkeys.KeyChanged -= OnKeyChanged; _gkeys.Dispose(); _gkeys = null; }
         _transport?.Dispose();
         _transport = null;
         if (Status == ControllerStatus.Running) SetStatus(ControllerStatus.Stopped);
+      }
+    }
+
+    /// <summary>
+    /// Periodic keep-alive while running: silently re-assert divert so the pipeline
+    /// survives the G613 clearing divert on idle sleep/wake (which fires no device
+    /// event and leaves <see cref="Status"/> at Running, so nothing else recovers it).
+    /// Cheap and safe to call every few seconds; a transient failure is ignored and
+    /// the not-running health retry rebuilds if the device actually went away.
+    /// </summary>
+    public void RefreshDivertIfRunning()
+    {
+        lock (_gate)
+        {
+            if (Status == ControllerStatus.Running && _gkeys is not null)
+            {
+                try { _gkeys.RefreshDivert(); } catch { /* next tick / health retry handles it */ }
+            }
+        }
     }
 
     /// <summary>
@@ -110,12 +135,15 @@ public sealed class G613Controller : IDisposable
     /// </summary>
     public void ReArm()
     {
-        if (Status == ControllerStatus.Running && _gkeys is not null)
+        lock (_gate)
         {
-            try { _gkeys.ReArm(); } catch { Start(); }
-            return;
+            if (Status == ControllerStatus.Running && _gkeys is not null)
+            {
+                try { _gkeys.ReArm(); } catch { Start(); }
+                return;
+            }
+            if (Status != ControllerStatus.Stopped) Start();
         }
-        if (Status != ControllerStatus.Stopped) Start();
     }
 
     private void OnKeyChanged(GKeyEvent ev)

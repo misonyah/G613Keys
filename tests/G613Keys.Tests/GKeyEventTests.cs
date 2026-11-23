@@ -86,6 +86,41 @@ public class GKeyEventTests
     }
 
     [Fact]
+    public void RefreshDivert_ResendsDivert_WithoutResettingKeyState()
+    {
+        var (t, ch, svc) = Build();
+        using (t) using (svc)
+        {
+            svc.Enable();
+            var events = new List<GKeyEvent>();
+            using var seen = new ManualResetEventSlim();
+            svc.KeyChanged += e => { lock (events) events.Add(e); seen.Set(); };
+
+            ch.Inject(GKeyEventReport(0x01));      // G1 down -> lastBitmap = 0x01
+            Assert.True(seen.Wait(1000));
+
+            int writesBefore = ch.Writes.Count;
+            Assert.True(svc.RefreshDivert());       // keep-alive re-sends divert on
+            Assert.Equal(writesBefore + 1, ch.Writes.Count);
+            Assert.Equal(0x01, ch.Writes[^1][4]);
+
+            // The same bitmap arriving again must NOT re-fire a down: state was kept.
+            seen.Reset();
+            ch.Inject(GKeyEventReport(0x01));
+            Assert.False(seen.Wait(150));
+            lock (events) Assert.Single(events);    // still just the one G1 down
+        }
+    }
+
+    [Fact]
+    public void RefreshDivert_WhenNotEnabled_ReturnsFalse()
+    {
+        var (t, ch, svc) = Build();
+        using (t) using (svc)
+            Assert.False(svc.RefreshDivert());      // never enabled -> no-op
+    }
+
+    [Fact]
     public void Notification_RaisesKeyChanged()
     {
         var (t, ch, svc) = Build();

@@ -15,6 +15,7 @@ internal sealed class TrayApp : ApplicationContext
     private readonly DeviceNotificationWindow _devWindow;
     private readonly System.Windows.Forms.Timer _reArmDebounce;
     private readonly System.Windows.Forms.Timer _healthRetry;
+    private readonly System.Threading.Timer _divertKeepAlive;
     private readonly SynchronizationContext _ui;
     private readonly ToolStripMenuItem _enableItem;
     private readonly ToolStripMenuItem _statusItem;
@@ -66,6 +67,12 @@ internal sealed class TrayApp : ApplicationContext
                 _controller.Start();
         };
         _healthRetry.Start();
+
+        // On idle sleep/wake the G613 silently drops divert while Status stays Running,
+        // so re-assert divert on a background timer (HID I/O, kept off the UI thread).
+        _divertKeepAlive = new System.Threading.Timer(
+            _ => { if (_enableItem.Checked) _controller.RefreshDivertIfRunning(); },
+            null, 5000, 5000);
 
         _controller.Start();
     }
@@ -163,6 +170,7 @@ internal sealed class TrayApp : ApplicationContext
         {
             _reArmDebounce.Dispose();
             _healthRetry.Dispose();
+            _divertKeepAlive.Dispose();
             _devWindow.Dispose();
             _controller.Dispose();
             _tray.Dispose();

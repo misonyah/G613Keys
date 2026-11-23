@@ -119,10 +119,13 @@ public sealed class G613Controller : IDisposable
     {
         lock (_gate)
         {
-            if (Status == ControllerStatus.Running && _gkeys is not null)
-            {
-                try { _gkeys.RefreshDivert(); } catch { /* next tick / health retry handles it */ }
-            }
+            if (Status != ControllerStatus.Running || _gkeys is null) return;
+            // Succeeds (awake keyboard accepts the re-send) -> divert restored, done.
+            // Fails/throws (device asleep, gone, or receiver replugged) -> the pipeline
+            // is stale, so rebuild it: Start() opens fresh handles and re-diverts.
+            bool ok;
+            try { ok = _gkeys.RefreshDivert(); } catch { ok = false; }
+            if (!ok) Start();
         }
     }
 
@@ -139,7 +142,11 @@ public sealed class G613Controller : IDisposable
         {
             if (Status == ControllerStatus.Running && _gkeys is not null)
             {
-                try { _gkeys.ReArm(); } catch { Start(); }
+                // A dead transport (e.g. the receiver was just replugged) makes the
+                // divert request fail WITHOUT throwing, so rebuild on false too.
+                bool ok;
+                try { ok = _gkeys.ReArm(); } catch { ok = false; }
+                if (!ok) Start();
                 return;
             }
             if (Status != ControllerStatus.Stopped) Start();
